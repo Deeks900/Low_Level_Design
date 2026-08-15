@@ -1,8 +1,12 @@
 #include <bits/stdc++.h>
 #include <ctime>
+#include <mutex>
+#include <thread>
+#include <memory>
+
 using namespace std;
 
-//enum class for different log levels
+// enum class for different log levels
 enum class LogLevel{
     DEBUG,
     INFO, 
@@ -11,7 +15,8 @@ enum class LogLevel{
     FATAL
 };
 
-//Now we will be creating Log Message class
+// Now we will be creating Log Message class
+// Single Responsibility Principle satisfied here, as this class is only responsible for creating log messages
 class LogMessage{
     private:
         LogLevel level;
@@ -19,151 +24,230 @@ class LogMessage{
         time_t timestamp;
 
     public:
-    //constructor
-    LogMessage(LogLevel level, string message) {
-        this->level = level;
-        this->message = message;
-        this->timestamp = time(nullptr);
-    }  
+        // constructor
+        LogMessage(LogLevel level, string message) {
+            this->level = level;
+            this->message = message;
+            this->timestamp = time(nullptr);
+        }  
 
-    LogLevel getLogLevel() {
-        return level;
-    }           
+        LogLevel getLogLevel() {
+            return level;
+        }           
 
-    string getMessage() {
-        return message;
-    }   
+        string getMessage() {
+            return message;
+        }   
 
-    time_t getTimestamp() {
-        return timestamp;
-    }
-
+        time_t getTimestamp() {
+            return timestamp;
+        }
 };
 
-//Now let's move to Formatter, We will be creating a abstract class
+// Now let's move to Formatter, We will be creating an abstract class
 class LogFormatter{
     public:
-        virtual string formatLogMessage(LogMessage& logMessage) = 0; //pure virtual function
-
+        virtual ~LogFormatter() {}
+        virtual string formatLogMessage(LogMessage& logMessage) = 0;
 };
 
-//Now we will be creating a concrete class for formatter
+// Now we will be creating a concrete class for formatter
 class defaultFormatter : public LogFormatter { 
     public:
-        //Implement that pure virtual function
-        string formatLogMessage(LogMessage& logMessage) { 
-            //formatting of message will be done
+        // Implement that pure virtual function
+        string formatLogMessage(LogMessage& logMessage) override { 
+            // formatting of message will be done
             return logMessage.getMessage();
         }
 };
 
-//Now we will be creating a abstract class Appender 
+// Now we will be creating an abstract class Appender 
 class Appender {
     public:
+        virtual ~Appender(){}
         virtual void append(string formattedLogMessage) = 0;
 };
 
-//Now we will be creating concrete classes for appender 
+// Now we will be creating concrete classes for appender 
 class fileAppender : public Appender {
+    private:
+        mutex mtx; // Mutex for thread safety
+
     public:
-        void append(string logMessage){
-            //here we will write the log message to a file
+        void append(string logMessage) override {
+            lock_guard<mutex> lock(mtx);
+
+            // here we will write the log message to a file
             return;
         }
 };
 
 class consoleAppender : public Appender {
+    private:
+        mutex mtx; // Mutex for thread safety
+
     public:
-        void append(string logMessage){
-            //here we will write the log message to console
+        void append(string logMessage) override {
+
+            lock_guard<mutex> lock(mtx);
+
+            // here we will write the log message to console
             cout << logMessage << endl;
-            return;
         }
 };
 
-//Now we will be making the logger class which will be the orchestrating class
+// Now we will be making the logger class which will be the orchestrating class
 class Logger {
     private:
         string name;
         LogLevel level;
-        LogFormatter* formatter;
-        vector<Appender*> appenders;
 
-        public:
-            Logger(string name, LogLevel level, LogFormatter* formatter) {
+        // shared_ptr instead of raw pointer
+        shared_ptr<LogFormatter> formatter;
+
+        // shared_ptr instead of raw pointers
+        vector<shared_ptr<Appender>> appenders;
+
+        // Protects the appenders vector
+        mutex appendersMutex;
+
+    public:
+        Logger(
+            string name,
+            LogLevel level,
+            shared_ptr<LogFormatter> formatter
+        ) {
             this->name = name;
             this->level = level;
             this->formatter = formatter;
+        }
+
+        // No destructor needed for formatter or appenders.
+        // shared_ptr automatically manages their lifetime.
+
+        void addAppender(shared_ptr<Appender> appender){
+
+            lock_guard<mutex> lock(appendersMutex);
+
+            this->appenders.push_back(appender);
+        }
+
+        void log(LogLevel level, string message){
+
+            if(level < this->level){
+                return; // Ignore messages below logger's level
             }
 
-            void addAppender(Appender* appender){
-                this->appenders.push_back(appender);
-            }
+            LogMessage logMessage(level, message);
 
-            void log(LogLevel level, string message){
-                if(level < this->level){
-                    return; // Ignore messages below the logger's level
-                }
+            string formatLog =
+                formatter->formatLogMessage(logMessage);
 
-                LogMessage logMessage = LogMessage(level, message);
-                string formatLog = formatter->formatLogMessage(logMessage);
-                for(auto i : appenders){
-                    i->append(formatLog);
-                }
-            }
+            // Take a snapshot of the appenders
+            vector<shared_ptr<Appender>> currentAppenders;
 
-            //Now the functions user will be making use of to log messages
-            void debug(string message){
-                log(LogLevel::DEBUG, message);
+            {
+                lock_guard<mutex> lock(appendersMutex);
+
+                currentAppenders = appenders;
+            } // appendersMutex released here
+
+            // No Logger vector lock now
+            for(auto appender : currentAppenders){
+                appender->append(formatLog);
             }
-            void info(string message){
-                log(LogLevel::INFO, message);
-            }
-            void warn(string message){
-                log(LogLevel::WARN, message);
-            }
-            void error(string message){
-                log(LogLevel::ERROR, message);
-            }
-            void fatal(string message){
-                log(LogLevel::FATAL, message);
-            }
+        }
+
+        // Now the functions user will be making use of to log messages
+        void debug(string message){
+            log(LogLevel::DEBUG, message);
+        }
+
+        void info(string message){
+            log(LogLevel::INFO, message);
+        }
+
+        void warn(string message){
+            log(LogLevel::WARN, message);
+        }
+
+        void error(string message){
+            log(LogLevel::ERROR, message);
+        }
+
+        void fatal(string message){
+            log(LogLevel::FATAL, message);
+        }
 };
 
-//Now implementing the logger Manager
+// Now implementing the logger Manager
 class LoggerManager { 
     private:
         unordered_map<string, Logger*> loggers;
-        LoggerManager() {} //For singleton pattern, private constructor
+
+        LoggerManager() {} // For singleton pattern, private constructor
 
     public:
-        //can only be accessed through class method, singleton pattern
+        // Can only be accessed through class method, singleton pattern
         static LoggerManager& getInstance(){
             static LoggerManager instance;
             return instance;
         }
 
+        // destructor
+        ~LoggerManager() {
+            for(auto i: loggers){
+                delete i.second;
+            }
+        }
+
         Logger* getLogger(string name){
+
             if(loggers.find(name) != loggers.end()){
                 return loggers[name];
             }
 
-            //If logger with this name doesn't exist, create a new one
-            Logger* newLogger = new Logger(name, LogLevel::DEBUG, new defaultFormatter());
-            newLogger->addAppender(new consoleAppender());
+            // If logger with this name doesn't exist, create a new one
+
+            shared_ptr<LogFormatter> formatter =
+                make_shared<defaultFormatter>();
+
+            Logger* newLogger =
+                new Logger(
+                    name,
+                    LogLevel::DEBUG,
+                    formatter
+                );
+
+            shared_ptr<Appender> console =
+                make_shared<consoleAppender>();
+
+            newLogger->addAppender(console);
+
             loggers[name] = newLogger;
+
             return newLogger;
         } 
 };
 
 int main(){
-    LoggerManager& loggerManager = LoggerManager::getInstance();
-    Logger* logger = loggerManager.getLogger("MyLogger");
+
+    LoggerManager& loggerManager =
+        LoggerManager::getInstance();
+
+    Logger* logger =
+        loggerManager.getLogger("MyLogger");
+
     logger->info("This is an info message");
+
     logger->debug("This is a debug message");   
+
     logger->warn("This is a warning message");
+
     logger->error("This is an error message");
+
     logger->fatal("This is a fatal message");
+
     return 0;
 }
 

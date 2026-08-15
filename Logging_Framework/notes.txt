@@ -1,0 +1,123 @@
+I separated responsibilities across LogMessage, Formatter, Appender and Logger. LogMessage represents the data, Formatter handles formatting, Appender handles the destination, and Logger orchestrates the logging workflow. This prevents changes in one responsibility from affecting unrelated components.
+
+I used abstractions for Formatter and Appender so new formatting strategies or output destinations can be added through new implementations rather than modifying Logger. This follows the Open/Closed Principle.
+
+Liskov Substitution Principlr -> Parent can be replaced by child without breaking the client .We have used this in Appender 
+
+ISP
+Am I forcing a class to implement things it doesn't need? 
+
+Appender
+   ↓
+only append()
+
+
+ConsoleAppender only needs append()
+GOOD → ISP
+
+Dependency Inversion Principle : High-level classes should depend on abstractions, not concrete implementations.
+
+SOLID
+│
+├── S → One responsibility
+│
+├── O → Add new behavior without modifying existing code
+│
+├── L → Child should be usable as parent
+│
+└── I → Don't force classes to implement unnecessary methods
+
+Design Patterns
+│
+├── Strategy
+│      ├── LogFormatter
+│      └── Appender
+│
+└── Singleton
+       └── LoggerManager
+
+Dependency Injection : Instead of a class creating the object it needs, someone else gives it that object.       
+
+This is the first rule:
+
+Construction: Base → Derived
+
+Destruction: Derived → Base
+
+Concurrency = multiple tasks making progress during overlapping time.
+
+Parallelism = actually executing at the same time on different CPU execution resources.
+
+An abstract class cannot be instantiated directly; it is intended to define a common interface for its concrete derived classes.
+
+        Logger
+                 │
+       ┌─────────┴─────────┐
+       │                   │
+ appenders vector       Appenders
+       │                   │
+    🔒 mutex             🔒 own mutex
+       │                   │
+ protects vector       protects resource
+
+ That's why the mutex itself needs to be shared when you want multiple threads to synchronize around the same resource.
+
+ Mutex
+  ↓
+Who can access shared data simultaneously?
+
+shared_ptr
+  ↓
+Does the object still exist?
+
+int* p = new int(10);
+unique_ptr<int> p = make_unique<int>(10);
+you don't write delete.
+
+When p goes out of scope, the object is automatically destroyed.
+unique_ptr<int> q = p; // ❌
+unique_ptr<int> q = move(p);
+
+shared_ptr<int> p = make_shared<int>(10);
+shared_ptr<int> q = p;
+shared_ptr internally keeps track of how many shared_ptrs own the object.
+cout << p.use_count() << endl;
+reference count = 0
+        ↓
+object automatically destroyed
+
+RAW POINTER
+int* p
+   ↓
+I manage lifetime manually
+   ↓
+delete p
+
+
+UNIQUE_PTR
+unique_ptr<int> p
+   ↓
+ONE owner
+   ↓
+automatic cleanup
+
+
+SHARED_PTR
+shared_ptr<int> p
+   ↓
+MULTIPLE owners
+   ↓
+reference counting
+   ↓
+automatic cleanup
+
+unique_ptr when there is a single clear owner of an object. shared_ptr when multiple parts of the system need shared ownership and the object should remain alive until the last owner releases it.
+
+shared_ptr
+    ↓
+LIFETIME / OWNERSHIP
+
+
+mutex
+    ↓
+CONCURRENT ACCESS
