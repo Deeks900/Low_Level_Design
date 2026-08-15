@@ -121,3 +121,162 @@ LIFETIME / OWNERSHIP
 mutex
     ↓
 CONCURRENT ACCESS
+
+PART 2 
+-------
+request
+  ↓
+process
+  ↓
+LOG
+  ↓
+😴 wait 10 ms
+  ↓
+continue
+  ↓
+response
+
+This is called Producer–Consumer
+
+This is a very important concurrency pattern.
+
+You don't need to memorize the name yet. Just visualize it.
+
+PRODUCERS                         CONSUMER
+
+
+Thread 1 ──┐
+Thread 2 ──┤
+Thread 3 ──┼──► [ LOG QUEUE ] ──► Worker Thread
+Thread 4 ──┤
+Thread 5 ──┘
+
+The queue is the meeting point between them.
+
+Why do we need a queue?
+
+Suppose the application is producing logs faster than the disk can write them.
+
+For example:
+
+Application produces:
+
+
+1000 logs/sec
+
+but disk can process:
+
+200 logs/sec
+
+We don't want the application threads to wait for the disk.
+
+Instead:
+
+1000 logs/sec
+      ↓
+ ┌───────────────┐
+ │ LOG QUEUE     │
+ │               │
+ │  log1         │
+ │  log2         │
+ │  log3         │
+ │  ...          │
+ └───────────────┘
+      ↓
+  200 logs/sec
+      ↓
+     Disk
+
+The queue acts as a buffer.
+
+                Shared Queue
+                     │
+                     ↓
+                  mutex
+                     │
+              protects queue
+
+Instead, we want the worker to basically say:
+
+"Wake me up when there's a log message."
+
+And THAT is what we'll learn next:
+
+condition_variable
+
+It's essentially a mechanism that lets a thread sleep until another thread tells it that something interesting has happened. 
+
+Application Threads
+       │
+       │ produce logs
+       ↓
+ ┌──────────────┐
+ │ Thread-safe  │
+ │    Queue     │
+ └──────────────┘
+       │
+       │ consume logs
+       ↓
+ Background Worker
+       │
+       ↓
+     File
+
+ Thread
+  ↓
+A separate flow of execution
+
+
+mutex
+  ↓
+Protects shared data
+
+
+lock_guard
+  ↓
+Lock mutex for a scope
+
+
+unique_lock
+  ↓
+A flexible lock that condition_variable can temporarily unlock
+
+
+condition_variable
+  ↓
+Lets a thread sleep until something happens
+
+
+notify_one()
+  ↓
+Wakes one waiting thread
+
+
+join()
+  ↓
+Waits for a thread to finish
+
+
+queue
+  ↓
+Stores logs between producers and consumer   
+
+
+logger->info()
+      ↓
+format
+      ↓
+queue.push()
+      ↓
+return quickly 🚀
+
+
+Background Worker
+      ↓
+queue.pop()
+      ↓
+appender
+      ↓
+write to file
+
+mutex protects shared state; condition_variable coordinates waiting/waking; running is the actual application-level shutdown state.
