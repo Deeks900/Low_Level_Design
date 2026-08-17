@@ -39,15 +39,15 @@ class LogMessage{
             this->timestamp = time(nullptr);
         }  
 
-        LogLevel getLogLevel() {
+        LogLevel getLogLevel() const {
             return level;
         }           
 
-        string getMessage() {
+        string getMessage() const {
             return message;
         }   
 
-        time_t getTimestamp() {
+        time_t getTimestamp() const {
             return timestamp;
         }
 };
@@ -62,7 +62,7 @@ class LogFormatter{
 
         virtual ~LogFormatter() {}
 
-        virtual string formatLogMessage(LogMessage& logMessage) = 0;
+        virtual string formatLogMessage(const LogMessage& logMessage) = 0;
 };
 
 
@@ -73,7 +73,7 @@ class LogFormatter{
 class defaultFormatter : public LogFormatter { 
     public:
 
-        string formatLogMessage(LogMessage& logMessage) override { 
+        string formatLogMessage(const LogMessage& logMessage) override { 
             return logMessage.getMessage();
         }
 };
@@ -84,11 +84,17 @@ class defaultFormatter : public LogFormatter {
 // ============================================================
 
 class Appender {
+    protected:
+        shared_ptr<LogFormatter> formatter;
+
     public:
+
+        Appender(shared_ptr<LogFormatter> formatter)
+            : formatter(formatter) {}
 
         virtual ~Appender(){}
 
-        virtual void append(string formattedLogMessage) = 0;
+        virtual void append(const LogMessage& logMessage) = 0;
 };
 
 
@@ -103,11 +109,17 @@ class fileAppender : public Appender {
 
     public:
 
-        void append(string logMessage) override {
+        fileAppender(shared_ptr<LogFormatter> formatter)
+            : Appender(formatter) {}
+
+        void append(const LogMessage& logMessage) override {
 
             lock_guard<mutex> lock(mtx);
 
-            // Write logMessage to file
+            string formattedLogMessage =
+                formatter->formatLogMessage(logMessage);
+
+            // Write formattedLogMessage to file
 
             return;
         }
@@ -125,11 +137,17 @@ class consoleAppender : public Appender {
 
     public:
 
-        void append(string logMessage) override {
+        consoleAppender(shared_ptr<LogFormatter> formatter)
+            : Appender(formatter) {}
+
+        void append(const LogMessage& logMessage) override {
 
             lock_guard<mutex> lock(mtx);
 
-            cout << logMessage << endl;
+            string formattedLogMessage =
+                formatter->formatLogMessage(logMessage);
+
+            cout << formattedLogMessage << endl;
         }
 };
 
@@ -147,13 +165,6 @@ class Logger {
 
 
         // ----------------------------------------------------
-        // FORMATTER
-        // ----------------------------------------------------
-
-        shared_ptr<LogFormatter> formatter;
-
-
-        // ----------------------------------------------------
         // APPENDERS
         // ----------------------------------------------------
 
@@ -166,7 +177,7 @@ class Logger {
         // LOG QUEUE
         // ----------------------------------------------------
 
-        queue<string> logQueue;
+        queue<LogMessage> logQueue;
 
         mutex queueMutex;
 
@@ -195,7 +206,7 @@ class Logger {
 
             while(true){
 
-                string message;
+                LogMessage message(LogLevel::INFO, "");
 
 
                 // ------------------------------------------------
@@ -276,13 +287,11 @@ class Logger {
 
         Logger(
             string name,
-            LogLevel level,
-            shared_ptr<LogFormatter> formatter
+            LogLevel level
         ){
 
             this->name = name;
             this->level = level;
-            this->formatter = formatter;
 
 
             // Start worker thread
@@ -361,14 +370,6 @@ class Logger {
 
 
             // ------------------------------------------------
-            // Format message
-            // ------------------------------------------------
-
-            string formatLog =
-                formatter->formatLogMessage(logMessage);
-
-
-            // ------------------------------------------------
             // Put message into queue
             // ------------------------------------------------
 
@@ -388,7 +389,7 @@ class Logger {
                 }
 
 
-                logQueue.push(formatLog);
+                logQueue.push(logMessage);
 
             } // queueMutex released here
 
@@ -488,7 +489,18 @@ class LoggerManager {
 
 
             // ------------------------------------------------
-            // Create formatter
+            // Create Logger
+            // ------------------------------------------------
+
+            Logger* newLogger =
+                new Logger(
+                    name,
+                    LogLevel::DEBUG
+                );
+
+
+            // ------------------------------------------------
+            // Create formatter for console
             // ------------------------------------------------
 
             shared_ptr<LogFormatter> formatter =
@@ -496,23 +508,11 @@ class LoggerManager {
 
 
             // ------------------------------------------------
-            // Create Logger
-            // ------------------------------------------------
-
-            Logger* newLogger =
-                new Logger(
-                    name,
-                    LogLevel::DEBUG,
-                    formatter
-                );
-
-
-            // ------------------------------------------------
-            // Create console appender
+            // Create console appender with formatter
             // ------------------------------------------------
 
             shared_ptr<Appender> console =
-                make_shared<consoleAppender>();
+                make_shared<consoleAppender>(formatter);
 
 
             newLogger->addAppender(console);
